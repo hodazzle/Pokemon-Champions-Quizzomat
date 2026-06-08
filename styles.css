@@ -189,6 +189,16 @@ body {
 }
 .answer-empty { color: var(--muted); font-style: italic; }
 
+/* ---------- Stat answer (base speed) ---------- */
+.stat-answer { text-align: center; margin: 8px 0 2px; }
+.stat-number { font-size: 52px; font-weight: 800; color: var(--accent-2); line-height: 1; }
+.stat-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.stat-spread { display: flex; gap: 6px; margin-top: 16px; }
+.stat-spread .s { flex: 1; background: var(--bg-soft); border-radius: 10px; padding: 7px 2px; text-align: center; }
+.stat-spread .s b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }
+.stat-spread .s span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.stat-spread .s.hl { outline: 2px solid var(--accent-2); }
+
 /* ---------- Controls ---------- */
 .controls { margin-top: 16px; }
 .btn {

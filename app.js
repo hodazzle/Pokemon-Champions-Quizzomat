@@ -46,6 +46,7 @@ const CATEGORIES = {
   moves: { label: "Moves", prompt: "Name the most-used moves", kind: "list" },
   abilities: { label: "Abilities", prompt: "Name the most-used abilities", kind: "list" },
   items: { label: "Items", prompt: "Name the most-used items", kind: "list" },
+  speed: { label: "Base Speed", prompt: "What is its base Speed stat?", kind: "stat" },
   weak: { label: "Weaknesses", prompt: "Which types are super effective against it?", kind: "type" },
   resist: { label: "Resistances", prompt: "Which types does it resist?", kind: "type" },
   immune: { label: "Immunities", prompt: "Which types is it immune to?", kind: "type" },
@@ -67,7 +68,7 @@ const load = (k, fallback) => {
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
 const defaultSettings = () => ({
-  cats: { moves: true, abilities: true, items: true, weak: true, resist: true, immune: true },
+  cats: { moves: true, abilities: true, items: true, speed: true, weak: true, resist: true, immune: true },
   topN: 100,
   newPerDay: 15,
 });
@@ -78,7 +79,13 @@ let byId = new Map(); // pokemonId -> pokemon
 let maxUsage = 1;
 
 let srs = load(LS.srs, {});
-let settings = { ...defaultSettings(), ...load(LS.settings, {}) };
+const savedSettings = load(LS.settings, {});
+// Deep-merge cats so categories added in later versions default on for existing users.
+let settings = {
+  ...defaultSettings(),
+  ...savedSettings,
+  cats: { ...defaultSettings().cats, ...(savedSettings.cats || {}) },
+};
 let daily = load(LS.daily, { date: today(), reviewed: 0, introduced: 0 });
 
 let current = null; // current card { pokemon, cat, id, answer }
@@ -142,6 +149,7 @@ function hasCategory(p, cat) {
   if (cat === "moves") return p.moves.length > 0;
   if (cat === "abilities") return p.abilities.length > 0;
   if (cat === "items") return p.items.length > 0;
+  if (cat === "speed") return !!(p.stats && Number.isFinite(p.stats.spe));
   if (cat === "weak") return true;
   if (cat === "resist") return true;
   if (cat === "immune") return typeProfile(p).immune.length > 0; // skip trivial "None"
@@ -167,6 +175,7 @@ function cardAnswer(p, cat) {
   if (cat === "moves") return { kind: "list", items: p.moves };
   if (cat === "abilities") return { kind: "list", items: p.abilities };
   if (cat === "items") return { kind: "list", items: p.items };
+  if (cat === "speed") return { kind: "stat", value: p.stats.spe, stats: p.stats };
   const prof = typeProfile(p);
   if (cat === "weak") return { kind: "type", items: prof.weak, note: null };
   if (cat === "resist") return { kind: "type", items: prof.resist, note: null };
@@ -176,6 +185,65 @@ function cardAnswer(p, cat) {
 // ---------------------------------------------------------------------------
 // Spaced-repetition scheduling
 // ---------------------------------------------------------------------------
+
+// A compact signature of what the user actually has to memorize for a card.
+// Percentages drift slightly every week; we key on the *set of facts* (which
+// moves/abilities/items appear) so tiny % wiggles don't constantly re-trigger reviews.
+function contentFingerprint(p, cat) {
+  if (cat === "moves" || cat === "abilities" || cat === "items")
+    return (p[cat] || []).map((x) => x.name).sort().join("|");
+  if (cat === "speed") return `spe:${p.stats?.spe}`;
+  return `types:${[...p.types].sort().join(",")}`; // type matchups are fixed
+}
+
+// How "new" the current content is vs. what was last studied, in [0,1].
+// For list cards this is the fraction of facts that are newly present.
+function changeRatio(oldFp, newFp, cat) {
+  if (oldFp === newFp) return 0;
+  if (cat === "moves" || cat === "abilities" || cat === "items") {
+    const oldSet = new Set(oldFp ? oldFp.split("|") : []);
+    const newArr = newFp ? newFp.split("|") : [];
+    if (!newArr.length) return 0;
+    const added = newArr.filter((x) => !oldSet.has(x)).length;
+    return Math.min(1, added / newArr.length);
+  }
+  return 1; // speed / typing actually changed -> treat as fully new
+}
+
+// On every data refresh, reconcile schedules with changed content.
+// A card whose facts changed is pulled forward proportionally: nothing changed
+// -> untouched; everything changed -> brand-new treatment; e.g. 2 of 6 moves new
+// -> reviewed noticeably sooner but not reset. Runs once per content change.
+function reconcileContent() {
+  const now = Date.now();
+  let dirty = false;
+  let adjusted = 0;
+  for (const [id, s] of Object.entries(srs)) {
+    const hash = id.indexOf("#");
+    const pid = id.slice(0, hash);
+    const cat = id.slice(hash + 1);
+    const p = byId.get(pid);
+    if (!p || !CATEGORIES[cat]) continue;
+    const cur = contentFingerprint(p, cat);
+    if (s.content === undefined) {
+      s.content = cur; // grandfather cards from before this feature
+      dirty = true;
+      continue;
+    }
+    if (s.content === cur) continue;
+    const r = changeRatio(s.content, cur, cat);
+    if (r > 0) {
+      s.reps = Math.round((s.reps || 0) * (1 - r));
+      s.interval = (s.interval || 0) * (1 - r);
+      if (s.due > now) s.due = now + (s.due - now) * (1 - r); // pull review forward
+      adjusted++;
+    }
+    s.content = cur;
+    dirty = true;
+  }
+  if (dirty) save(LS.srs, srs);
+  return adjusted;
+}
 
 function usageStretch(usage) {
   const norm = Math.min(1, usage / maxUsage);
@@ -210,6 +278,7 @@ function grade(card, g) {
     s.due = now + base * DAY;
   }
   s.last = now;
+  s.content = contentFingerprint(byId.get(card.pid), card.cat);
   srs[card.id] = s;
   save(LS.srs, srs);
 
@@ -333,7 +402,13 @@ function renderAnswer() {
   ans.replaceChildren();
   const a = current.answer;
 
-  if (a.kind === "list") {
+  if (a.kind === "stat") {
+    const big = el("div", "stat-answer");
+    big.append(el("div", "stat-number", String(a.value)));
+    big.append(el("div", "stat-sub", "Base Speed"));
+    ans.append(big);
+    if (a.stats) ans.append(statSpread(a.stats));
+  } else if (a.kind === "list") {
     if (!a.items.length) {
       ans.append(el("p", "answer-empty", "No data."));
     } else {
@@ -365,6 +440,18 @@ function answerRow(label, pct) {
   row.append(bar);
   row.append(el("span", "ans-pct", fmtPct(pct)));
   return row;
+}
+
+function statSpread(stats) {
+  const order = [["HP", "hp"], ["Atk", "atk"], ["Def", "def"], ["SpA", "spa"], ["SpD", "spd"], ["Spe", "spe"]];
+  const w = el("div", "stat-spread");
+  for (const [lbl, key] of order) {
+    const s = el("div", "s" + (key === "spe" ? " hl" : ""));
+    s.append(el("b", null, String(stats[key] ?? "—")));
+    s.append(el("span", null, lbl));
+    w.append(s);
+  }
+  return w;
 }
 
 function multChip(type, mult) {
@@ -588,6 +675,8 @@ async function boot() {
   byId = new Map(DATA.pokemon.map((p) => [p.id, p]));
   maxUsage = Math.max(...DATA.pokemon.map((p) => p.usage), 1);
   settings.topN = Math.min(settings.topN, DATA.pokemon.length);
+
+  reconcileContent(); // adjust schedules for any facts that changed since last visit
 
   wireEvents();
   renderQuestion();
