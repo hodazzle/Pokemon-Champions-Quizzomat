@@ -97,3 +97,9 @@ works offline.
   Pikalytics' `llms-full.txt`).
 
 Data courtesy of [Pikalytics](https://www.pikalytics.com).
+
+## License
+
+Source code is [MIT licensed](LICENSE). Bundled usage data belongs to Pikalytics,
+and Pokémon names/sprites are © Nintendo, Game Freak, and The Pokémon Company —
+included here for personal, non-commercial study only.
