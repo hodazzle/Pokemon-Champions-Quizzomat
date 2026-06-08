@@ -12,6 +12,11 @@ permissions:
   pages: write
   id-token: write
 
+# Run the bundled JS actions on Node 24 (Node 20 runtime is removed after Sep 2026,
+# and forced off by default from Jun 2026). Keeps the weekly build working unattended.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -27,7 +32,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Scrape latest Pikalytics data
         run: node scripts/scrape.mjs
