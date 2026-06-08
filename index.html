@@ -18,63 +18,96 @@
   </head>
   <body>
     <div id="app">
-      <!-- Top bar -->
-      <header class="topbar">
-        <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
-        <div class="topbar-stats">
-          <span id="stat-due" class="pill pill-due" title="Cards due now">0 due</span>
-          <span id="stat-done" class="pill" title="Reviewed today">0 today</span>
+      <!-- ============== HOME SCREEN ============== -->
+      <section id="home" class="screen home">
+        <div class="home-hero">
+          <img class="home-logo" src="icons/icon.svg" alt="" />
+          <h1 class="home-title">Champions Quiz</h1>
+          <p class="home-tag">Learn the Pokémon Champions VGC metagame by heart.</p>
         </div>
-        <button id="btn-stats" class="icon-btn" title="Progress" aria-label="Progress">📊</button>
-      </header>
 
-      <!-- Main quiz card -->
-      <main id="quiz" class="quiz" hidden>
-        <div class="card">
-          <div class="card-head">
-            <span id="q-category" class="category-badge">Moves</span>
-            <span id="q-usage" class="usage-tag"></span>
+        <div id="home-stats" class="home-stats"></div>
+
+        <button id="home-start" class="btn btn-primary btn-big">Start studying</button>
+
+        <nav class="home-menu">
+          <button class="menu-item" data-open="settings">
+            <span class="menu-ico">⚙</span><span>Quiz settings</span><span class="menu-arrow">›</span>
+          </button>
+          <button class="menu-item" data-open="stats">
+            <span class="menu-ico">📊</span><span>My progress</span><span class="menu-arrow">›</span>
+          </button>
+          <button class="menu-item" data-open="sync">
+            <span class="menu-ico">⟲</span><span>Sync &amp; backup</span><span class="menu-arrow">›</span>
+          </button>
+          <button class="menu-item" data-open="updates">
+            <span class="menu-ico">✦</span><span>What's new &amp; how it works</span><span class="menu-arrow">›</span>
+          </button>
+        </nav>
+
+        <p id="home-data" class="home-data muted small"></p>
+        <p class="home-disclaimer muted small">
+          A fan made study tool. Not affiliated with Nintendo, Game Freak, The Pokémon
+          Company, or Pikalytics. Usage data courtesy of Pikalytics; move data from PokéAPI.
+        </p>
+      </section>
+
+      <!-- ============== QUIZ SCREEN ============== -->
+      <section id="quiz-screen" class="screen" hidden>
+        <header class="topbar">
+          <button id="btn-home" class="icon-btn" title="Home" aria-label="Home">‹</button>
+          <div class="topbar-stats">
+            <span id="stat-due" class="pill pill-due" title="Cards due now">0 due</span>
+            <span id="stat-done" class="pill" title="Reviewed today">0 today</span>
           </div>
+          <button id="btn-quiz-settings" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
+        </header>
 
-          <img id="q-sprite" class="sprite" alt="" />
-          <h1 id="q-name" class="poke-name">—</h1>
-          <div id="q-types" class="type-row"></div>
-          <p id="q-prompt" class="prompt">…</p>
+        <main id="quiz" class="quiz" hidden>
+          <div class="card">
+            <!-- Prominent question banner -->
+            <div class="q-banner">
+              <span id="q-category" class="category-badge">Moves</span>
+              <h2 id="q-prompt" class="q-title">…</h2>
+            </div>
 
-          <!-- Answer (hidden until flip) -->
-          <div id="answer" class="answer" hidden></div>
+            <div class="sprite-wrap">
+              <img id="q-sprite" class="sprite" alt="" />
+              <span id="q-usage" class="usage-tag"></span>
+            </div>
+            <h1 id="q-name" class="poke-name">...</h1>
+            <div id="q-types" class="type-row"></div>
 
-          <!-- Controls -->
-          <div class="controls">
-            <button id="btn-flip" class="btn btn-primary">Show answer</button>
-            <div id="grade-row" class="grade-row" hidden>
-              <button class="btn grade" data-grade="again">Again</button>
-              <button class="btn grade" data-grade="good">Good</button>
-              <button class="btn grade" data-grade="easy">Easy</button>
+            <div id="answer" class="answer" hidden></div>
+
+            <div class="controls">
+              <button id="btn-flip" class="btn btn-primary">Show answer</button>
+              <div id="grade-row" class="grade-row" hidden>
+                <button class="btn grade" data-grade="again">Again</button>
+                <button class="btn grade" data-grade="good">Good</button>
+                <button class="btn grade" data-grade="easy">Easy</button>
+              </div>
             </div>
           </div>
-        </div>
-        <p class="hint">Tap the card or press <kbd>Space</kbd> to flip · grade with <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd></p>
-      </main>
+          <p class="hint">Tap the card or press <kbd>Space</kbd> to flip · grade with <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd></p>
+        </main>
 
-      <!-- Empty / loading states -->
-      <section id="message" class="message">
-        <p id="message-text">Loading the latest Champions data…</p>
-        <button id="message-action" class="btn btn-primary" hidden></button>
+        <section id="message" class="message">
+          <p id="message-text">Loading the latest Champions data…</p>
+          <button id="message-action" class="btn btn-primary" hidden></button>
+        </section>
       </section>
     </div>
 
-    <!-- Settings drawer -->
+    <!-- ============== DRAWERS ============== -->
     <div id="settings" class="drawer" hidden>
       <div class="drawer-inner">
         <div class="drawer-head">
-          <h2>Settings</h2>
-          <button id="settings-close" class="icon-btn" aria-label="Close">✕</button>
+          <h2>Quiz settings</h2>
+          <button data-close class="icon-btn" aria-label="Close">✕</button>
         </div>
-
         <h3>Quiz types</h3>
         <div id="cat-toggles" class="toggles"></div>
-
         <h3>Scope</h3>
         <label class="field">
           Quiz only the top
@@ -85,23 +118,65 @@
           New cards introduced per day
           <input id="new-per-day" type="number" min="0" max="100" step="5" />
         </label>
-
-        <h3>Data</h3>
-        <p id="data-info" class="muted small"></p>
-
         <h3 class="danger-h">Danger zone</h3>
         <button id="btn-reset" class="btn btn-danger">Reset all my progress</button>
       </div>
     </div>
 
-    <!-- Stats drawer -->
     <div id="stats" class="drawer" hidden>
       <div class="drawer-inner">
         <div class="drawer-head">
-          <h2>Progress</h2>
-          <button id="stats-close" class="icon-btn" aria-label="Close">✕</button>
+          <h2>My progress</h2>
+          <button data-close class="icon-btn" aria-label="Close">✕</button>
         </div>
         <div id="stats-body" class="stats-body"></div>
+      </div>
+    </div>
+
+    <div id="sync" class="drawer" hidden>
+      <div class="drawer-inner">
+        <div class="drawer-head">
+          <h2>Sync &amp; backup</h2>
+          <button data-close class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <p class="muted small">
+          Your progress lives on this device. To use it on another device (phone, PC),
+          copy your progress code here and paste it there, or save a backup file. This
+          keeps everything private, with nothing sent to any server.
+        </p>
+
+        <h3>Move progress to another device</h3>
+        <label class="field-col">Your progress code</label>
+        <textarea id="sync-out" class="sync-box" readonly rows="3"></textarea>
+        <div class="btn-row">
+          <button id="sync-copy" class="btn">Copy code</button>
+          <button id="sync-download" class="btn">Save backup file</button>
+        </div>
+
+        <h3>Load progress from another device</h3>
+        <label class="field-col">Paste a progress code, then load</label>
+        <textarea id="sync-in" class="sync-box" rows="3" placeholder="Paste your code here"></textarea>
+        <div class="btn-row">
+          <button id="sync-load" class="btn btn-primary">Load code</button>
+          <label class="btn file-btn">Open backup file<input id="sync-file" type="file" accept="application/json,.json" hidden /></label>
+        </div>
+        <p id="sync-msg" class="sync-msg small"></p>
+        <p class="muted small">Loading merges with what is already on this device, keeping the most recent result for each card.</p>
+      </div>
+    </div>
+
+    <div id="updates" class="drawer" hidden>
+      <div class="drawer-inner">
+        <div class="drawer-head">
+          <h2>What's new &amp; how it works</h2>
+          <button data-close class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-tab="changelog">Updates</button>
+          <button class="tab" data-tab="how">How it works</button>
+        </div>
+        <div id="tab-changelog" class="tab-panel"></div>
+        <div id="tab-how" class="tab-panel" hidden></div>
       </div>
     </div>
 

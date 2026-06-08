@@ -1,103 +1,65 @@
-# 🎮 Champions Quiz
+# Champions Quiz
 
 **Learn the Pokémon Champions VGC metagame by heart.**
 
-A flashcard-style quiz that shows you a Pokémon and asks you to recall its most-used
-**moves, abilities, items**, its **base Speed**, and its **type matchups** — all from
-live competitive usage data. It drills the Pokémon you'll actually face most, and brings
-back whatever you keep forgetting, like a spaced-repetition app (Anki) built just for VGC.
+A flashcard style quiz that shows you a Pokémon and asks you to recall its most used
+**moves, abilities, items**, its **base Speed**, and its **type matchups**, all from live
+competitive usage data. It drills the Pokémon you will actually face most, and brings
+back whatever you keep forgetting, like a spaced repetition app built just for VGC.
 
-### ▶️ Play it here
+### Play it here
+
 **https://hodazzle.github.io/Pokemon-Champions-Quizzomat/**
 
-> 📲 **Put it on your phone:** open that link in **Safari** → tap **Share** →
-> **Add to Home Screen**. It then opens fullscreen like a real app and works offline.
+Open that link in **Safari** on your iPhone, tap **Share**, then **Add to Home Screen**.
+It then opens fullscreen like a real app and works offline.
 
 ---
 
 ## How to play
 
-1. You see a Pokémon — its sprite, name, types, and a question
-   (e.g. *"Name the most-used moves"*).
-2. Try to recall the answer in your head.
-3. **Tap the card** (or press `Space`) to flip it and reveal the answer, with the exact
-   **usage %** for each move/ability/item.
-4. Rate how you did: **Again / Good / Easy** (or keys `1` / `2` / `3`).
-   The app schedules when you'll see that card again — soon if you struggled, later if you nailed it.
+1. From the home screen, tap **Start studying**.
+2. You see a Pokémon and a clear question at the top of the card.
+3. Recall the answer in your head, then tap the card (or press Space) to flip it.
+4. The answer appears with the exact **usage %** of each option.
+5. Tap any move, ability or item to see its details (power, accuracy, physical or
+   special, spread or single target, and effect), without leaving the card.
+6. Rate yourself: **Again, Good, Easy**. The app decides when you will see that card next.
 
-You're quizzed **more often on popular Pokémon** (Basculegion shows up far more than some
-2%-usage pick) and less on rare ones, so your study time goes where it matters.
+You are quizzed more often on popular Pokémon and less on rare ones, so your time goes
+where it matters most.
 
 ### What it quizzes you on
-- **Moves** — the top moves and how often they're run
-- **Abilities** — the common ability choices
-- **Items** — the common held items
-- **Base Speed** — the Pokémon's base Speed stat (with its full stat spread on the back)
-- **Weaknesses / Resistances / Immunities** — its type matchups
 
-**Tap any move, ability, or item** in the revealed answer to expand its details —
-a move's type, category (physical/special/status), power, accuracy, spread vs. single
-target, PP, and effect; or an ability/item's description — right inline, without flipping
-the card or affecting your grade.
+- **Moves**, **Abilities**, **Items** with their usage share
+- **Base Speed** (with the full base stat spread on the back)
+- **Weaknesses, Resistances, Immunities** from the type chart
 
-Tap **⚙** to turn any of these on/off, choose how many of the top Pokémon to study, and
-set how many new cards to learn per day. Tap **📊** to see your progress.
+Tap the menu items on the home screen to change quiz types and scope, see your progress,
+sync to another device, or read **What's new and how it works**.
 
 ---
 
-## Staying up to date
+## Sync and backup
 
-The usage data refreshes automatically **every Monday**, so the quiz always reflects the
-current metagame. When that happens:
+Your progress is saved on each device. To move it to another device, open
+**Sync and backup** from the home screen and copy your progress code (or save a backup
+file), then load it on the other device. Nothing is sent to any server, so it stays
+private.
 
-- **Your progress is kept.** A Pokémon you've been learning stays the same card — it just
-  shows the latest numbers.
-- **If its facts change, it comes back sooner.** If, say, 2 of a Pokémon's 6 moves have
-  shifted in the meta, the card is bumped up for review proportionally — small changes mean
-  a gentle refresher, big changes mean it's treated almost like something brand new.
-- **New Pokémon show up automatically.** If a Pokémon climbs into the top of the metagame,
-  it (and its sprite) appear as new cards on their own.
+## Updates
 
-Your learning progress is saved on each device you use — it isn't synced between them.
+Open **What's new and how it works** in the app for the full change history and answers
+to common questions, such as how Mega item percentages are calculated and how spread
+moves work in doubles.
 
 ---
 
-## A few notes
+## Disclaimer
 
-- It's **free** and runs entirely in your browser — no account, no ads, nothing to pay.
-- Usage data is from [Pikalytics](https://www.pikalytics.com), which updates roughly monthly,
-  so some Mondays the numbers will simply stay the same.
-- Type matchups use the standard Pokémon type chart.
-
----
-
-<details>
-<summary>🔧 For the curious / developers</summary>
-
-This is a static web app (plain HTML/CSS/JS, no build step) hosted on GitHub Pages.
-A scheduled GitHub Action runs the scraper weekly and redeploys the site — there's no
-server and nothing to maintain.
-
-| Path | What it is |
-|------|------------|
-| `index.html`, `styles.css`, `app.js` | the app and quiz engine |
-| `data/champions.json` | per-Pokémon usage, top moves/abilities/items, types, stats |
-| `data/typechart.json` | ability-based immunity maps (the type chart is built into `app.js`) |
-| `data/moves.json`, `abilities.json`, `items.json` | mechanics/effects from [PokéAPI](https://pokeapi.co) |
-| `sprites/*.png` | cached Pokémon sprites |
-| `scripts/scrape.mjs` | the scraper (runs in CI; uses Pikalytics' data endpoints + PokéAPI) |
-| `.github/workflows/refresh.yml` | weekly refresh + deploy to GitHub Pages |
-| `manifest.webmanifest`, `sw.js`, `icons/` | makes it installable + offline (PWA) |
-
-**Run the scraper locally** (optional, needs Node): `node scripts/scrape.mjs`
-regenerates `data/*.json` and `sprites/`. Tweaks: `MAX_POKEMON=272 node scripts/scrape.mjs`
-for more Pokémon; `FORMAT=...` for a different format. In `app.js`, `STRETCH_K` controls
-how strongly usage biases how often a Pokémon is quizzed.
-
-</details>
-
-## License
-
-Source code is [MIT licensed](LICENSE). Usage data belongs to Pikalytics, and Pokémon
-names/sprites are © Nintendo, Game Freak, and The Pokémon Company — included here for
-personal, non-commercial study only.
+This is an unofficial, fan made study tool. It is **not affiliated with Nintendo, Game
+Freak, The Pokémon Company, or Pikalytics**. Pokémon and all related names and images are
+trademarks and copyright of their respective owners and are used here for personal study
+only. Competitive usage data is courtesy of [Pikalytics](https://www.pikalytics.com), and
+move, ability and item mechanics are from [PokéAPI](https://pokeapi.co). This project is
+non-commercial and earns no money. See [LICENSE](LICENSE) for terms.

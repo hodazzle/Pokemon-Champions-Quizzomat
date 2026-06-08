@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Champions Quiz — data scraper
+ * Champions Quiz - data scraper
  * ------------------------------------------------------------------
  * Pulls the current Pokemon Champions usage data from Pikalytics'
  * publicly-documented machine endpoints (see /llms-full.txt) and writes:
  *
- *   data/champions.json   — per-Pokemon: usage%, top moves/abilities/items, types, stats
- *   data/typechart.json   — type-effectiveness chart + ability immunity maps
- *   sprites/<key>.png     — cached sprite for every Pokemon
+ *   data/champions.json   - per-Pokemon: usage%, top moves/abilities/items, types, stats
+ *   data/typechart.json   - type-effectiveness chart + ability immunity maps
+ *   sprites/<key>.png     - cached sprite for every Pokemon
  *
  * It is polite: descriptive User-Agent, small delays, only documented
  * endpoints (ClaudeBot / AI agents are explicitly allowed in robots.txt).
@@ -33,8 +33,9 @@ const UA =
 // The format we study. Override with FORMAT env var if Pikalytics renames it.
 const DEFAULT_FORMAT = process.env.FORMAT || "gen9championsvgc2026regma";
 
-// How many moves / abilities / items to keep per Pokemon (what the quiz asks for).
-const KEEP = { moves: 6, abilities: 2, items: 3 };
+// How many candidate moves / abilities / items to keep per Pokemon. We keep extra
+// here; the app decides how many to actually show based on the usage distribution.
+const KEEP = { moves: 8, abilities: 4, items: 8 };
 
 // How many Pokemon (by usage rank) to include. The user studies "the top 200".
 const MAX_POKEMON = Number(process.env.MAX_POKEMON || 200);
@@ -180,10 +181,10 @@ async function buildChampions(list, typequiz, meta, date, formatKey) {
 const isMegaName = (n) => /-Mega(-[XY])?$/i.test(n);
 const baseSpeciesName = (n) => n.replace(/-Mega(-[XY])?$/i, "");
 
-// A Mega always holds its stone, so its Items card is trivial — instead we fold the
-// stone into the BASE form's item list at its real share of the species' usage:
-//   stoneShare = megaUsage / (baseUsage + sum(megaUsage))
-// and rescale the base items so the distribution stays coherent (~100%).
+// A Mega always holds its stone, so its Items card is trivial. Instead we attach the
+// stone to the BASE form as an extra, always shown item, sized to its real share of
+// the species' usage: stoneShare = megaUsage / (baseUsage + sum(megaUsage)). The base
+// items are rescaled by baseUsage/total so the species-wide distribution stays coherent.
 function mergeMegaStones(list) {
   const byName = new Map(list.map((p) => [p.name, p]));
   const megasByBase = new Map();
@@ -196,31 +197,24 @@ function mergeMegaStones(list) {
 
   for (const [base, megas] of megasByBase) {
     const baseMon = byName.get(base);
-    if (!baseMon) continue; // base form not tracked -> nothing to merge into
+    if (!baseMon) continue; // base form not tracked, nothing to attach to
     const total = baseMon.usage + megas.reduce((s, m) => s + m.usage, 0);
     if (total <= 0) continue;
 
-    const stones = megas.map((m) => ({
-      name: m.items[0]?.name || `${base} Stone`,
-      percent: (m.usage / total) * 100,
-      mega: true,
-    }));
-    const scaledBase = baseMon.items.map((i) => ({
+    // The stone(s): kept separate so the app can always show them in addition to items.
+    baseMon.megaStones = megas
+      .map((m) => ({
+        name: m.items[0]?.name || `${base} Stone`,
+        percent: (m.usage / total) * 100,
+        mega: true,
+      }))
+      .sort((a, b) => b.percent - a.percent);
+
+    // Rescale the base items to species-wide share (they no longer sum to 100 alone).
+    baseMon.items = baseMon.items.map((i) => ({
       name: i.name,
       percent: i.percent * (baseMon.usage / total),
     }));
-
-    let merged = [...scaledBase, ...stones].sort((a, b) => b.percent - a.percent);
-    let result = merged.slice(0, KEEP.items);
-    // Guarantee the stone(s) appear even if they'd rank below the top items.
-    if (stones.some((s) => !result.includes(s))) {
-      result = [...scaledBase]
-        .sort((a, b) => b.percent - a.percent)
-        .slice(0, Math.max(0, KEEP.items - stones.length))
-        .concat(stones)
-        .sort((a, b) => b.percent - a.percent);
-    }
-    baseMon.items = result;
     baseMon.canMega = true;
   }
 }
@@ -289,7 +283,7 @@ async function downloadSprites(champions) {
 }
 
 // ---------------------------------------------------------------------------
-// Move / ability / item mechanics (from PokeAPI — free, no key, stable data)
+// Move / ability / item mechanics (from PokeAPI - free, no key, stable data)
 // ---------------------------------------------------------------------------
 
 const POKEAPI = "https://pokeapi.co/api/v2";
@@ -312,7 +306,7 @@ function enText(entries, key) {
   return (en?.[key] || "").replace(/\s+/g, " ").trim();
 }
 
-// How a move targets in doubles — what VGC players care about (spread vs single).
+// How a move targets in doubles - what VGC players care about (spread vs single).
 const TARGET_LABEL = {
   "selected-pokemon": "Single target",
   "all-opponents": "Spread (both foes)",

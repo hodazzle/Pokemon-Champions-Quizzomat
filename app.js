@@ -1,17 +1,22 @@
-// Champions Quiz — Anki-style spaced repetition for Pokemon Champions usage data.
+// Champions Quiz. Anki style spaced repetition for Pokemon Champions usage data.
 // Plain ES module, no build step. State lives in localStorage (per device).
 
 const DAY = 86_400_000;
-const AGAIN_DELAY = 60_000; // a lapsed card comes back ~1 min later (same session)
-const STRETCH_K = 2; // low-usage Pokemon get up to ~3x longer review intervals
+const AGAIN_DELAY = 60_000; // a lapsed card comes back about a minute later (same session)
+const STRETCH_K = 2; // low usage Pokemon get up to about 3x longer review intervals
+
+// How many of each answer to show, chosen from the usage distribution (see selectShown).
+const SHOW = {
+  moves: { floor: 10, hard: 3, min: 4, cap: 6 },
+  abilities: { floor: 5, hard: 1, min: 2, cap: 4 },
+  items: { floor: 5, hard: 2, min: 3, cap: 6 },
+};
 
 // ---------------------------------------------------------------------------
 // Static reference data
 // ---------------------------------------------------------------------------
 
 // Canonical attacking type chart: T[attacker][defender] = multiplier (omitted = 1x).
-// Embedded because type effectiveness is universal and stable, and the live feed
-// does not encode 0x immunities.
 const T = {
   normal: { rock: 0.5, ghost: 0, steel: 0.5 },
   fire: { grass: 2, ice: 2, bug: 2, steel: 2, fire: 0.5, water: 0.5, rock: 0.5, dragon: 0.5 },
@@ -42,25 +47,71 @@ const TYPE_COLORS = {
   steel: "#5a8ea1", fairy: "#ec8fe6",
 };
 
-const CATEGORIES = {
-  moves: { label: "Moves", prompt: "Name the most-used moves", kind: "list" },
-  abilities: { label: "Abilities", prompt: "Name the most-used abilities", kind: "list" },
-  items: { label: "Items", prompt: "Name the most-used items", kind: "list" },
-  speed: { label: "Base Speed", prompt: "What is its base Speed stat?", kind: "stat" },
-  weak: { label: "Weaknesses", prompt: "Which types are super effective against it?", kind: "type" },
-  resist: { label: "Resistances", prompt: "Which types does it resist?", kind: "type" },
-  immune: { label: "Immunities", prompt: "Which types is it immune to?", kind: "type" },
+// Move category badges with a small glyph (physical / special / status).
+const CAT_META = {
+  Physical: { color: "#e8533f", glyph: '<path d="M2 8.5 L9.5 2 L8 7 H14 L6.5 14 L8 8.5 Z"/>' },
+  Special: { color: "#4c7be0", glyph: '<circle cx="8" cy="8" r="2.6"/><circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+  Status: { color: "#8a8f9c", glyph: '<circle cx="4.4" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="11.6" cy="8" r="1.5"/>' },
 };
+
+const CATEGORIES = {
+  moves: { label: "Moves", kind: "list" },
+  abilities: { label: "Abilities", kind: "list" },
+  items: { label: "Items", kind: "list" },
+  speed: { label: "Base Speed", kind: "stat" },
+  weak: { label: "Weaknesses", kind: "type" },
+  resist: { label: "Resistances", kind: "type" },
+  immune: { label: "Immunities", kind: "type" },
+};
+
+function promptFor(cat, n) {
+  switch (cat) {
+    case "moves": return `Name the ${n} most-used moves`;
+    case "abilities": return n === 1 ? "Name the main ability" : `Name the ${n} most-used abilities`;
+    case "items": return `Name the ${n} most-used items`;
+    case "speed": return "What is its base Speed stat?";
+    case "weak": return "Which types are super effective against it?";
+    case "resist": return "Which types does it resist?";
+    case "immune": return "Which types is it immune to?";
+    default: return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// What's new + how it works content
+// ---------------------------------------------------------------------------
+
+const CHANGELOG = [
+  { v: "1.6", date: "2026-06-09", items: [
+    "New home screen and menu before the quiz.",
+    "Cross device sync and backup, by code or file.",
+    "Clearer, more prominent question on every card.",
+    "Move, ability and item details redesigned with category icons and a clean stat layout.",
+    "Answer length now adapts to the usage distribution instead of always showing three.",
+    "The Mega stone is now shown as an extra item and is always included.",
+    "Added this Updates and How it works section.",
+  ]},
+  { v: "1.4", date: "2026-06-08", items: ["Mega forms no longer ask for their item; the stone is folded into the base form at its real usage share."] },
+  { v: "1.3", date: "2026-06-08", items: ["Tap any move, ability or item to see its mechanics, from PokéAPI."] },
+  { v: "1.2", date: "2026-06-08", items: ["Smart weekly updates: cards whose facts changed come back for review sooner."] },
+  { v: "1.1", date: "2026-06-08", items: ["Added a base Speed quiz."] },
+  { v: "1.0", date: "2026-06-08", items: ["First version: usage weighted spaced repetition for moves, abilities, items and type matchups."] },
+];
+
+const HOWTO = [
+  { q: "How does the quiz pick what to show me?", a: "You see Pokémon weighted by how common they are in the metagame, so most of your time goes to what you will actually face. A spaced repetition scheduler then brings each card back based on how well you knew it." },
+  { q: "Why do item percentages differ from Pikalytics for Mega Pokémon?", a: "On Pikalytics a Mega is listed as a separate Pokémon whose item is almost always its Mega stone. Here the stone is attached to the base form instead, sized to how often that species actually Mega Evolves: megaUsage divided by (baseUsage plus megaUsage). The base items are rescaled to a species wide share. So the numbers are recomputed on purpose, to teach the real chance of facing the Mega, not a mismatch." },
+  { q: "How do spread and single target moves work in VGC?", a: "Champions is doubles, so many moves can hit both opponents (spread) for slightly less damage, while others hit a single target. Tap a move to see its target, power, accuracy, PP and effect." },
+  { q: "Why do some Pokémon show more answers than others?", a: "The app shows the meaningful options, those above a usage threshold, with at least a few and a sensible cap. When there is a long flat tail of rare choices it is skipped to save your time. The Mega stone is always shown." },
+  { q: "What happens to my progress when the data updates?", a: "It is kept. Each Monday the data refreshes; if a card's facts changed, it comes back for review sooner, in proportion to how much changed. Brand new Pokémon appear as new cards." },
+  { q: "Where does the data come from?", a: "Usage statistics from Pikalytics, refreshed about monthly. Move, ability and item mechanics from PokéAPI." },
+];
 
 // ---------------------------------------------------------------------------
 // Persistent state
 // ---------------------------------------------------------------------------
 
-const LS = {
-  srs: "cq.srs.v1",
-  daily: "cq.daily.v1",
-  settings: "cq.settings.v1",
-};
+const LS = { srs: "cq.srs.v1", daily: "cq.daily.v1", settings: "cq.settings.v1" };
 const load = (k, fallback) => {
   try { return JSON.parse(localStorage.getItem(k)) ?? fallback; }
   catch { return fallback; }
@@ -73,30 +124,27 @@ const defaultSettings = () => ({
   newPerDay: 15,
 });
 
-let DATA = null; // { meta, pokemon: [...] }
-let CHART = null; // typechart.json (ability maps)
-let MOVES = {}; // name -> { type, category, power, accuracy, pp, target, desc }
-let ABILITIES = {}; // name -> { desc }
-let ITEMS = {}; // name -> { desc }
-let byId = new Map(); // pokemonId -> pokemon
+let DATA = null;
+let CHART = null;
+let MOVES = {};
+let ABILITIES = {};
+let ITEMS = {};
+let byId = new Map();
 let maxUsage = 1;
 
-let srs = load(LS.srs, {});
 const savedSettings = load(LS.settings, {});
-// Deep-merge cats so categories added in later versions default on for existing users.
 let settings = {
   ...defaultSettings(),
   ...savedSettings,
   cats: { ...defaultSettings().cats, ...(savedSettings.cats || {}) },
 };
+let srs = load(LS.srs, {});
 let daily = load(LS.daily, { date: today(), reviewed: 0, introduced: 0 });
 
-let current = null; // current card { pokemon, cat, id, answer }
+let current = null;
 let cramMode = false;
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+function today() { return new Date().toISOString().slice(0, 10); }
 function rollDaily() {
   if (daily.date !== today()) {
     daily = { date: today(), reviewed: 0, introduced: 0 };
@@ -105,7 +153,7 @@ function rollDaily() {
 }
 
 // ---------------------------------------------------------------------------
-// Type-effectiveness helpers
+// Type effectiveness
 // ---------------------------------------------------------------------------
 
 function defenseMultiplier(attacker, defTypes) {
@@ -113,8 +161,6 @@ function defenseMultiplier(attacker, defTypes) {
   for (const d of defTypes) m *= T[attacker][d] ?? 1;
   return m;
 }
-
-// Returns { weak:[{type,mult}], resist:[...], immune:[...] } for a Pokemon's typing.
 function typeProfile(pokemon) {
   const out = { weak: [], resist: [], immune: [] };
   for (const atk of ALL_TYPES) {
@@ -123,13 +169,10 @@ function typeProfile(pokemon) {
     else if (m > 1) out.weak.push({ type: atk, mult: m });
     else if (m < 1) out.resist.push({ type: atk, mult: m });
   }
-  const order = (a, b) => b.mult - a.mult || a.type.localeCompare(b.type);
-  out.weak.sort(order);
+  out.weak.sort((a, b) => b.mult - a.mult || a.type.localeCompare(b.type));
   out.resist.sort((a, b) => a.mult - b.mult || a.type.localeCompare(b.type));
   return out;
 }
-
-// Ability-based immunity note (e.g. Levitate -> Ground). Informational only.
 function abilityImmunityNote(pokemon) {
   const map = CHART?.abilityImmunityMap || {};
   for (const a of pokemon.abilities || []) {
@@ -140,126 +183,122 @@ function abilityImmunityNote(pokemon) {
 }
 
 // ---------------------------------------------------------------------------
-// Deck + card answers
+// Deck + answers
 // ---------------------------------------------------------------------------
 
-function eligiblePokemon() {
-  return DATA.pokemon.slice(0, settings.topN);
+// Choose how many answers to show from the usage distribution: include those above a
+// floor, keep at least a minimum and at most a cap, skip a long flat tail, and never
+// pad with near zero noise.
+function selectShown(list, cfg) {
+  const sorted = [...(list || [])].sort((a, b) => b.percent - a.percent);
+  if (!sorted.length) return [];
+  const strong = sorted.filter((x) => x.percent >= cfg.floor).length;
+  let n = strong > cfg.cap ? cfg.min : Math.max(cfg.min, strong);
+  n = Math.min(n, cfg.cap, sorted.length);
+  let chosen = sorted.slice(0, n);
+  while (chosen.length > 1 && chosen[chosen.length - 1].percent < cfg.hard) chosen.pop();
+  return chosen;
 }
 
-// Does a Pokemon have content for a given category?
+// The exact list shown for a list category. Mega stones are always appended for items.
+function shownList(p, cat) {
+  if (cat === "moves") return selectShown(p.moves, SHOW.moves);
+  if (cat === "abilities") return selectShown(p.abilities, SHOW.abilities);
+  if (cat === "items") {
+    // Show the chosen items plus the Mega stone(s), always included, sorted by share.
+    return [...selectShown(p.items, SHOW.items), ...(p.megaStones || [])].sort(
+      (a, b) => b.percent - a.percent,
+    );
+  }
+  return [];
+}
+
+function eligiblePokemon() { return DATA.pokemon.slice(0, settings.topN); }
+
 function hasCategory(p, cat) {
   if (cat === "moves") return p.moves.length > 0;
   if (cat === "abilities") return p.abilities.length > 0;
-  if (cat === "items") return !p.isMega && p.items.length > 0; // Mega item is always its stone
+  if (cat === "items") return !p.isMega && shownList(p, "items").length > 0;
   if (cat === "speed") return !!(p.stats && Number.isFinite(p.stats.spe));
   if (cat === "weak") return true;
   if (cat === "resist") return true;
-  if (cat === "immune") return typeProfile(p).immune.length > 0; // skip trivial "None"
+  if (cat === "immune") return typeProfile(p).immune.length > 0;
   return false;
 }
 
-function enabledCats() {
-  return Object.keys(CATEGORIES).filter((c) => settings.cats[c]);
-}
+function enabledCats() { return Object.keys(CATEGORIES).filter((c) => settings.cats[c]); }
 
-// All currently-eligible card ids.
 function allCards() {
   const cards = [];
-  for (const p of eligiblePokemon()) {
-    for (const cat of enabledCats()) {
+  for (const p of eligiblePokemon())
+    for (const cat of enabledCats())
       if (hasCategory(p, cat)) cards.push({ id: `${p.id}#${cat}`, pid: p.id, cat });
-    }
-  }
   return cards;
 }
 
 function cardAnswer(p, cat) {
-  if (cat === "moves") return { kind: "list", items: p.moves };
-  if (cat === "abilities") return { kind: "list", items: p.abilities };
-  if (cat === "items") return { kind: "list", items: p.items };
+  if (cat === "moves" || cat === "abilities" || cat === "items")
+    return { kind: "list", items: shownList(p, cat) };
   if (cat === "speed") return { kind: "stat", value: p.stats.spe, stats: p.stats };
   const prof = typeProfile(p);
-  if (cat === "weak") return { kind: "type", items: prof.weak, note: null };
-  if (cat === "resist") return { kind: "type", items: prof.resist, note: null };
-  if (cat === "immune") return { kind: "type", items: prof.immune, note: abilityImmunityNote(p) };
+  if (cat === "weak") return { kind: "type", items: prof.weak };
+  if (cat === "resist") return { kind: "type", items: prof.resist };
+  return { kind: "type", items: prof.immune, note: abilityImmunityNote(p) };
 }
 
 // ---------------------------------------------------------------------------
-// Spaced-repetition scheduling
+// Spaced repetition
 // ---------------------------------------------------------------------------
 
-// A compact signature of what the user actually has to memorize for a card.
-// Percentages drift slightly every week; we key on the *set of facts* (which
-// moves/abilities/items appear) so tiny % wiggles don't constantly re-trigger reviews.
 function contentFingerprint(p, cat) {
   if (cat === "moves" || cat === "abilities" || cat === "items")
-    return (p[cat] || []).map((x) => x.name).sort().join("|");
+    return shownList(p, cat).map((x) => x.name).sort().join("|");
   if (cat === "speed") return `spe:${p.stats?.spe}`;
-  return `types:${[...p.types].sort().join(",")}`; // type matchups are fixed
+  return `types:${[...p.types].sort().join(",")}`;
 }
-
-// How "new" the current content is vs. what was last studied, in [0,1].
-// For list cards this is the fraction of facts that are newly present.
 function changeRatio(oldFp, newFp, cat) {
   if (oldFp === newFp) return 0;
   if (cat === "moves" || cat === "abilities" || cat === "items") {
     const oldSet = new Set(oldFp ? oldFp.split("|") : []);
     const newArr = newFp ? newFp.split("|") : [];
     if (!newArr.length) return 0;
-    const added = newArr.filter((x) => !oldSet.has(x)).length;
-    return Math.min(1, added / newArr.length);
+    return Math.min(1, newArr.filter((x) => !oldSet.has(x)).length / newArr.length);
   }
-  return 1; // speed / typing actually changed -> treat as fully new
+  return 1;
 }
-
-// On every data refresh, reconcile schedules with changed content.
-// A card whose facts changed is pulled forward proportionally: nothing changed
-// -> untouched; everything changed -> brand-new treatment; e.g. 2 of 6 moves new
-// -> reviewed noticeably sooner but not reset. Runs once per content change.
 function reconcileContent() {
   const now = Date.now();
   let dirty = false;
-  let adjusted = 0;
   for (const [id, s] of Object.entries(srs)) {
     const hash = id.indexOf("#");
-    const pid = id.slice(0, hash);
+    const p = byId.get(id.slice(0, hash));
     const cat = id.slice(hash + 1);
-    const p = byId.get(pid);
     if (!p || !CATEGORIES[cat]) continue;
     const cur = contentFingerprint(p, cat);
-    if (s.content === undefined) {
-      s.content = cur; // grandfather cards from before this feature
-      dirty = true;
-      continue;
-    }
+    if (s.content === undefined) { s.content = cur; dirty = true; continue; }
     if (s.content === cur) continue;
     const r = changeRatio(s.content, cur, cat);
     if (r > 0) {
       s.reps = Math.round((s.reps || 0) * (1 - r));
       s.interval = (s.interval || 0) * (1 - r);
-      if (s.due > now) s.due = now + (s.due - now) * (1 - r); // pull review forward
-      adjusted++;
+      if (s.due > now) s.due = now + (s.due - now) * (1 - r);
     }
     s.content = cur;
     dirty = true;
   }
   if (dirty) save(LS.srs, srs);
-  return adjusted;
 }
 
 function usageStretch(usage) {
   const norm = Math.min(1, usage / maxUsage);
-  return 1 + (1 - norm) * STRETCH_K; // 1x for top mon, up to (1+K)x for rarest
+  return 1 + (1 - norm) * STRETCH_K;
 }
 
 function grade(card, g) {
   const now = Date.now();
   const prior = srs[card.id];
   const isNew = !prior;
-  const s = prior
-    ? { ...prior }
-    : { reps: 0, interval: 0, ease: 2.5, lapses: 0, last: 0 };
+  const s = prior ? { ...prior } : { reps: 0, interval: 0, ease: 2.5, lapses: 0, last: 0 };
 
   if (g === "again") {
     s.reps = 0;
@@ -291,7 +330,6 @@ function grade(card, g) {
   save(LS.daily, daily);
 }
 
-// Weighted random pick: probability scales with usage (strong bias to meta staples).
 function weightedPick(cards) {
   let total = 0;
   const weights = cards.map((c) => {
@@ -307,27 +345,20 @@ function weightedPick(cards) {
   return cards[cards.length - 1];
 }
 
-// Decide the next card. Returns { card, mode } or null.
 function pickNext() {
   rollDaily();
   const now = Date.now();
   const cards = allCards();
-  const due = [];
-  const fresh = [];
+  const due = [], fresh = [];
   for (const c of cards) {
     const s = srs[c.id];
     if (!s) fresh.push(c);
     else if (s.due <= now) due.push(c);
   }
-
-  if (cramMode) {
-    // Keep studying everything, weighted by usage, ignoring schedule.
-    return cards.length ? { card: weightedPick(cards), mode: "cram" } : null;
-  }
+  if (cramMode) return cards.length ? { card: weightedPick(cards), mode: "cram" } : null;
   if (due.length) return { card: weightedPick(due), mode: "due" };
-  if (fresh.length && daily.introduced < settings.newPerDay)
-    return { card: weightedPick(fresh), mode: "new" };
-  return null; // all caught up
+  if (fresh.length && daily.introduced < settings.newPerDay) return { card: weightedPick(fresh), mode: "new" };
+  return null;
 }
 
 function dueCount() {
@@ -342,7 +373,7 @@ function dueCount() {
 }
 
 // ---------------------------------------------------------------------------
-// Rendering
+// DOM helpers
 // ---------------------------------------------------------------------------
 
 const $ = (sel) => document.querySelector(sel);
@@ -354,43 +385,40 @@ const el = (tag, cls, html) => {
 };
 const fmtPct = (n) => `${n.toFixed(1)}%`;
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const spriteUrl = (p) => (p.spriteKey ? `sprites/${p.spriteKey}.png` : "");
 
-function spriteUrl(p) {
-  return p.spriteKey ? `sprites/${p.spriteKey}.png` : "";
-}
 function typeChip(type) {
   const c = el("span", "type-chip", cap(type));
   c.style.background = TYPE_COLORS[type] || "#888";
   return c;
 }
 
+// ---------------------------------------------------------------------------
+// Quiz rendering
+// ---------------------------------------------------------------------------
+
 function renderQuestion() {
   const next = pickNext();
-  if (!next) {
-    showCaughtUp();
-    return;
-  }
+  if (!next) { showCaughtUp(); return; }
   cramMode = next.mode === "cram";
   const p = byId.get(next.card.pid);
   const cat = next.card.cat;
-  current = { pokemon: p, pid: p.id, cat, id: next.card.id, answer: cardAnswer(p, cat) };
+  const answer = cardAnswer(p, cat);
+  current = { pokemon: p, pid: p.id, cat, id: next.card.id, answer };
 
   $("#message").hidden = true;
   $("#quiz").hidden = false;
 
   $("#q-category").textContent = CATEGORIES[cat].label;
+  $("#q-prompt").textContent = promptFor(cat, answer.items ? answer.items.length : 0);
   $("#q-usage").textContent = `${fmtPct(p.usage)} usage`;
   const sprite = $("#q-sprite");
   sprite.src = spriteUrl(p);
   sprite.alt = p.name;
   $("#q-name").textContent = p.name;
+  $("#q-types").replaceChildren(...p.types.map(typeChip));
 
-  const types = $("#q-types");
-  types.replaceChildren(...p.types.map(typeChip));
-
-  $("#q-prompt").textContent = CATEGORIES[cat].prompt;
-
-  // reset answer / controls
   const ans = $("#answer");
   ans.hidden = true;
   ans.replaceChildren();
@@ -412,16 +440,12 @@ function renderAnswer() {
     ans.append(big);
     if (a.stats) ans.append(statSpread(a.stats));
   } else if (a.kind === "list") {
-    if (!a.items.length) {
-      ans.append(el("p", "answer-empty", "No data."));
-    } else {
-      for (const it of a.items)
-        ans.append(answerRow(it.name, it.percent, buildDetail(current.cat, it), it.mega ? "Mega" : null));
-    }
+    if (!a.items.length) ans.append(el("p", "answer-empty", "No data."));
+    else for (const it of a.items)
+      ans.append(answerRow(it.name, it.percent, buildDetail(current.cat, it), it.mega ? "Mega" : null));
   } else {
-    if (!a.items.length) {
-      ans.append(el("p", "answer-empty", "None — neutral or no immunities."));
-    } else {
+    if (!a.items.length) ans.append(el("p", "answer-empty", "None. Neutral, no immunities."));
+    else {
       const wrap = el("div", "type-row");
       for (const it of a.items) wrap.append(multChip(it.type, it.mult));
       ans.append(wrap);
@@ -437,9 +461,6 @@ function renderAnswer() {
 function answerRow(label, pct, detailHtml, badge) {
   const wrap = el("div", "ans-row-wrap");
   const row = el("div", "ans-row");
-
-  // Label is a button only when there's info to expand; tapping it reveals detail
-  // in place — it never flips the card or affects grading.
   const lab = el(detailHtml ? "button" : "span", "ans-label" + (detailHtml ? " has-info" : ""));
   lab.append(document.createTextNode(label));
   if (badge) lab.append(el("span", "mega-badge", badge));
@@ -447,9 +468,7 @@ function answerRow(label, pct, detailHtml, badge) {
   row.append(lab);
 
   const bar = el("div", "bar");
-  bar.append(Object.assign(document.createElement("span"), {
-    style: `width:${Math.min(100, pct)}%`,
-  }));
+  bar.append(Object.assign(document.createElement("span"), { style: `width:${Math.min(100, pct)}%` }));
   row.append(bar);
   row.append(el("span", "ans-pct", fmtPct(pct)));
   wrap.append(row);
@@ -467,43 +486,12 @@ function answerRow(label, pct, detailHtml, badge) {
   return wrap;
 }
 
-const esc = (s) =>
-  String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-// Build the expandable detail HTML for a move/ability/item answer, or null.
-function buildDetail(cat, it) {
-  const name = it.name;
-  if (cat === "moves") {
-    const m = MOVES[name];
-    return m ? moveDetailHtml(m) : null;
-  }
-  if (cat === "items" && it.mega) {
-    const known = ITEMS[name]?.desc;
-    return `<div>${known ? esc(known) + " " : ""}Mega Evolution stone — the holder Mega Evolves in battle. Shown as its share of this Pokémon's total usage.</div>`;
-  }
-  const rec = (cat === "abilities" ? ABILITIES : cat === "items" ? ITEMS : null)?.[name];
-  return rec && rec.desc ? `<div>${esc(rec.desc)}</div>` : null;
-}
-
-function moveDetailHtml(m) {
-  const chips = [];
-  if (m.type) chips.push(`<span class="chip">${cap(m.type)}</span>`);
-  if (m.category) chips.push(`<span class="chip">${m.category}</span>`);
-  chips.push(`<span class="chip">${m.power ? m.power + " BP" : "— BP"}</span>`);
-  chips.push(`<span class="chip">${m.accuracy == null ? "—" : m.accuracy + "%"} acc</span>`);
-  if (m.target) chips.push(`<span class="chip">${esc(m.target)}</span>`);
-  if (m.pp) chips.push(`<span class="chip">${m.pp} PP</span>`);
-  let html = `<div class="meta-line">${chips.join("")}</div>`;
-  if (m.desc) html += `<div>${esc(m.desc)}</div>`;
-  return html;
-}
-
 function statSpread(stats) {
   const order = [["HP", "hp"], ["Atk", "atk"], ["Def", "def"], ["SpA", "spa"], ["SpD", "spd"], ["Spe", "spe"]];
   const w = el("div", "stat-spread");
   for (const [lbl, key] of order) {
     const s = el("div", "s" + (key === "spe" ? " hl" : ""));
-    s.append(el("b", null, String(stats[key] ?? "—")));
+    s.append(el("b", null, String(stats[key] ?? "-")));
     s.append(el("span", null, lbl));
     w.append(s);
   }
@@ -512,28 +500,66 @@ function statSpread(stats) {
 
 function multChip(type, mult) {
   const c = el("span", "mult-chip");
-  const dot = typeChip(type);
-  c.append(dot);
-  const label = mult === 0 ? "0×" : `${mult}×`;
-  c.append(el("span", "mult", label));
+  c.append(typeChip(type));
+  c.append(el("span", "mult", mult === 0 ? "0×" : `${mult}×`));
   return c;
 }
+
+// ---- expandable detail (move mechanics / ability / item) ----
+
+function buildDetail(cat, it) {
+  const name = it.name;
+  if (cat === "moves") {
+    const m = MOVES[name];
+    return m ? moveDetailHtml(m) : null;
+  }
+  if (cat === "items" && it.mega) {
+    const known = ITEMS[name]?.desc;
+    return `<div class="effect-text">${known ? esc(known) + " " : ""}Mega Evolution stone. The holder Mega Evolves in battle. Shown as its share of this Pokémon's total usage.</div>`;
+  }
+  const rec = (cat === "abilities" ? ABILITIES : cat === "items" ? ITEMS : null)?.[name];
+  return rec && rec.desc ? `<div class="effect-text">${esc(rec.desc)}</div>` : null;
+}
+
+function catBadge(category) {
+  const meta = CAT_META[category];
+  if (!meta) return `<span class="cat-badge">${esc(category)}</span>`;
+  return `<span class="cat-badge" style="--c:${meta.color}"><svg class="cat-ico" viewBox="0 0 16 16" fill="currentColor">${meta.glyph}</svg>${category}</span>`;
+}
+function targetIcon(target) {
+  const spread = /spread|all/i.test(target);
+  const dots = spread
+    ? '<circle cx="4" cy="8" r="2.4"/><circle cx="12" cy="8" r="2.4"/>'
+    : '<circle cx="8" cy="8" r="2.6"/>';
+  return `<svg class="tgt-ico" viewBox="0 0 16 16" fill="currentColor">${dots}</svg>`;
+}
+function moveDetailHtml(m) {
+  const type = m.type
+    ? `<span class="type-chip" style="background:${TYPE_COLORS[m.type] || "#888"}">${cap(m.type)}</span>` : "";
+  const cat = m.category ? catBadge(m.category) : "";
+  const block = (val, lbl) => `<div class="mb"><b>${val}</b><span>${lbl}</span></div>`;
+  const stats = [
+    block(m.power ? m.power : "-", "Power"),
+    block(m.accuracy == null ? "-" : m.accuracy + "%", "Acc"),
+    block(m.pp ?? "-", "PP"),
+  ].join("");
+  const target = m.target ? `<div class="md-target">${targetIcon(m.target)}<span>${esc(m.target)}</span></div>` : "";
+  const desc = m.desc ? `<div class="effect-text">${esc(m.desc)}</div>` : "";
+  return `<div class="move-detail"><div class="md-head">${type}${cat}</div><div class="md-stats">${stats}</div>${target}${desc}</div>`;
+}
+
+// ---- caught up / top stats ----
 
 function showCaughtUp() {
   $("#quiz").hidden = true;
   const m = $("#message");
   m.hidden = false;
   $("#message-text").textContent =
-    dueCount() === 0
-      ? "All caught up! No cards are due right now. 🎉"
-      : "Daily new-card limit reached.";
+    dueCount() === 0 ? "All caught up. No cards are due right now." : "Daily new card limit reached.";
   const btn = $("#message-action");
   btn.hidden = false;
   btn.textContent = "Keep studying anyway";
-  btn.onclick = () => {
-    cramMode = true;
-    renderQuestion();
-  };
+  btn.onclick = () => { cramMode = true; renderQuestion(); };
   updateTopStats();
 }
 
@@ -546,9 +572,54 @@ function updateTopStats() {
 }
 
 // ---------------------------------------------------------------------------
-// Settings + stats drawers
+// Home screen
 // ---------------------------------------------------------------------------
 
+function renderHome() {
+  const cards = allCards();
+  const now = Date.now();
+  let due = 0, mature = 0;
+  for (const c of cards) {
+    const s = srs[c.id];
+    if (!s) continue;
+    if (s.due <= now) due++;
+    if (s.interval >= 21) mature++;
+  }
+  const chip = (n, l) => `<div class="hstat"><b>${n}</b><span>${l}</span></div>`;
+  $("#home-stats").innerHTML = chip(due, "due now") + chip(daily.reviewed, "today") + chip(mature, "mastered");
+  $("#home-data").textContent = `${DATA.meta.label} · usage data ${DATA.meta.date} · top ${DATA.pokemon.length} Pokémon`;
+  $("#home-start").textContent = due > 0 ? `Study ${due} due card${due === 1 ? "" : "s"}` : "Start studying";
+}
+
+// ---------------------------------------------------------------------------
+// Screens + drawers
+// ---------------------------------------------------------------------------
+
+function showScreen(name) {
+  $("#home").hidden = name !== "home";
+  $("#quiz-screen").hidden = name !== "quiz";
+  if (name === "home") renderHome();
+}
+
+function openDrawer(id) {
+  if (id === "settings") buildSettings();
+  if (id === "stats") renderStats();
+  if (id === "sync") fillSync();
+  if (id === "updates") renderUpdates();
+  $("#" + id).hidden = false;
+}
+function closeDrawers() {
+  for (const d of document.querySelectorAll(".drawer")) d.hidden = true;
+  if ($("#home").hidden === false) renderHome();
+}
+
+// ---- settings ----
+
+function buildSettings() {
+  buildCatToggles();
+  $("#top-n").value = settings.topN;
+  $("#new-per-day").value = settings.newPerDay;
+}
 function buildCatToggles() {
   const wrap = $("#cat-toggles");
   wrap.replaceChildren();
@@ -562,28 +633,12 @@ function buildCatToggles() {
       settings.cats[key] = cb.checked;
       if (!enabledCats().length) { settings.cats[key] = true; cb.checked = true; return; }
       save(LS.settings, settings);
-      renderQuestion();
     };
-    lab.append(
-      el("span", null, `${def.label} <span class="toggle-count">${count} cards</span>`),
-    );
+    lab.append(el("span", null, `${def.label} <span class="toggle-count">${count} cards</span>`));
     lab.append(cb);
     wrap.append(lab);
   }
 }
-
-function openSettings() {
-  buildCatToggles();
-  $("#top-n").value = settings.topN;
-  $("#new-per-day").value = settings.newPerDay;
-  const m = DATA.meta;
-  $("#data-info").innerHTML =
-    `${m.label}<br>Usage data: <b>${m.date}</b> · ${DATA.pokemon.length} Pokémon` +
-    `<br>Fetched ${new Date(m.generatedAt).toLocaleDateString()} · ` +
-    `<a href="${m.source}" target="_blank" rel="noopener">Pikalytics</a>`;
-  $("#settings").hidden = false;
-}
-
 function commitNumberSetting(input, key, min, max) {
   let v = parseInt(input.value, 10);
   if (!Number.isFinite(v)) v = settings[key];
@@ -591,11 +646,12 @@ function commitNumberSetting(input, key, min, max) {
   input.value = v;
   settings[key] = v;
   save(LS.settings, settings);
-  renderQuestion();
   buildCatToggles();
 }
 
-function openStats() {
+// ---- stats ----
+
+function renderStats() {
   const cards = allCards();
   const now = Date.now();
   let seen = 0, due = 0, mature = 0, learning = 0;
@@ -604,8 +660,7 @@ function openStats() {
     if (!s) continue;
     seen++;
     if (s.due <= now) due++;
-    if (s.interval >= 21) mature++;
-    else learning++;
+    if (s.interval >= 21) mature++; else learning++;
   }
   const total = cards.length;
   const newCount = total - seen;
@@ -620,53 +675,97 @@ function openStats() {
     b.append(el("div", "lbl", lbl));
     return b;
   };
-  grid.append(box(total, "Total cards"));
-  grid.append(box(daily.reviewed, "Reviewed today"));
-  grid.append(box(due, "Due now"));
-  grid.append(box(mature, "Mastered (21d+)"));
+  grid.append(box(total, "Total cards"), box(daily.reviewed, "Reviewed today"), box(due, "Due now"), box(mature, "Mastered (21d+)"));
   body.append(grid);
 
   const bar = el("div", "mastery-bar");
-  const seg = (w, color) => {
-    if (w <= 0) return;
-    const s = document.createElement("span");
-    s.style.width = `${w}%`;
-    s.style.background = color;
-    bar.append(s);
-  };
+  const seg = (w, color) => { if (w > 0) { const s = document.createElement("span"); s.style.width = `${w}%`; s.style.background = color; bar.append(s); } };
   seg(pct(mature), "#4ad07f");
   seg(pct(learning), "#f4d23c");
   seg(pct(newCount), "#3a4263");
   body.append(el("p", "answer-section-title", "Mastery"));
   body.append(bar);
-  body.append(
-    el(
-      "div",
-      "legend",
-      `<span><i style="background:#4ad07f"></i>Mastered ${mature}</span>` +
-        `<span><i style="background:#f4d23c"></i>Learning ${learning}</span>` +
-        `<span><i style="background:#3a4263"></i>New ${newCount}</span>`,
-    ),
-  );
-  $("#stats").hidden = false;
+  body.append(el("div", "legend",
+    `<span><i style="background:#4ad07f"></i>Mastered ${mature}</span>` +
+    `<span><i style="background:#f4d23c"></i>Learning ${learning}</span>` +
+    `<span><i style="background:#3a4263"></i>New ${newCount}</span>`));
+}
+
+// ---- updates / how it works ----
+
+function renderUpdates() {
+  const cl = $("#tab-changelog");
+  cl.replaceChildren();
+  for (const e of CHANGELOG) {
+    const block = el("div", "cl-entry");
+    block.append(el("div", "cl-ver", `v${e.v} <span class="cl-date">${e.date}</span>`));
+    const ul = el("ul", "cl-list");
+    for (const it of e.items) ul.append(el("li", null, esc(it)));
+    block.append(ul);
+    cl.append(block);
+  }
+  const how = $("#tab-how");
+  how.replaceChildren();
+  for (const f of HOWTO) {
+    const block = el("div", "faq");
+    block.append(el("div", "faq-q", esc(f.q)));
+    block.append(el("div", "faq-a", esc(f.a)));
+    how.append(block);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sync + backup (code / file, no server)
+// ---------------------------------------------------------------------------
+
+function gatherState() { return { v: 1, app: "champions-quiz", srs, daily, settings }; }
+function encodeState(s) { return btoa(unescape(encodeURIComponent(JSON.stringify(s)))); }
+function decodeState(str) { return JSON.parse(decodeURIComponent(escape(atob(str.trim())))); }
+
+function fillSync() {
+  $("#sync-out").value = encodeState(gatherState());
+  $("#sync-in").value = "";
+  $("#sync-msg").textContent = "";
+}
+function applyImported(s) {
+  if (!s || typeof s !== "object" || !s.srs) throw new Error("Not a valid backup code");
+  let added = 0;
+  for (const [id, e] of Object.entries(s.srs)) {
+    const cur = srs[id];
+    if (!cur || (e.last || 0) > (cur.last || 0)) { srs[id] = e; added++; }
+  }
+  if (s.settings) settings = { ...settings, ...s.settings, cats: { ...settings.cats, ...(s.settings.cats || {}) } };
+  if (s.daily && (!daily.date || s.daily.date >= daily.date)) daily = s.daily;
+  save(LS.srs, srs); save(LS.settings, settings); save(LS.daily, daily);
+  return added;
+}
+function syncMsg(text, ok = true) {
+  const m = $("#sync-msg");
+  m.textContent = text;
+  m.classList.toggle("err", !ok);
 }
 
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 
-function flip() {
-  // Only reveal when a card is showing its question side.
-  if (current && $("#answer").hidden) renderAnswer();
-}
+function flip() { if (current && $("#answer").hidden) renderAnswer(); }
 
 function wireEvents() {
+  // home
+  $("#home-start").onclick = () => { showScreen("quiz"); renderQuestion(); };
+  document.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => openDrawer(b.dataset.open)));
+
+  // quiz topbar
+  $("#btn-home").onclick = () => showScreen("home");
+  $("#btn-quiz-settings").onclick = () => openDrawer("settings");
+
+  // flip + grade
   $("#btn-flip").onclick = flip;
   document.querySelector(".card").addEventListener("click", (e) => {
     if (e.target.closest("button")) return;
     if ($("#answer").hidden) flip();
   });
-
   document.querySelectorAll(".grade").forEach((b) => {
     b.onclick = () => {
       if (!current || $("#answer").hidden) return;
@@ -675,36 +774,73 @@ function wireEvents() {
     };
   });
 
-  $("#btn-settings").onclick = openSettings;
-  $("#settings-close").onclick = () => ($("#settings").hidden = true);
-  $("#btn-stats").onclick = openStats;
-  $("#stats-close").onclick = () => ($("#stats").hidden = true);
-  [$("#settings"), $("#stats")].forEach((d) =>
-    d.addEventListener("click", (e) => { if (e.target === d) d.hidden = true; }),
-  );
+  // drawers: close buttons + backdrop
+  document.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => closeDrawers()));
+  document.querySelectorAll(".drawer").forEach((d) =>
+    d.addEventListener("click", (e) => { if (e.target === d) closeDrawers(); }));
 
+  // settings inputs
   $("#top-n").onchange = (e) => commitNumberSetting(e.target, "topN", 10, DATA.pokemon.length);
   $("#new-per-day").onchange = (e) => commitNumberSetting(e.target, "newPerDay", 0, 100);
-
   $("#btn-reset").onclick = () => {
     if (!confirm("Erase all your quiz progress on this device?")) return;
     srs = {};
     daily = { date: today(), reviewed: 0, introduced: 0 };
-    save(LS.srs, srs);
-    save(LS.daily, daily);
-    $("#settings").hidden = true;
+    save(LS.srs, srs); save(LS.daily, daily);
+    closeDrawers();
     cramMode = false;
-    renderQuestion();
+    showScreen("home");
   };
 
+  // updates tabs
+  document.querySelectorAll(".tab").forEach((t) => (t.onclick = () => {
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
+    $("#tab-changelog").hidden = t.dataset.tab !== "changelog";
+    $("#tab-how").hidden = t.dataset.tab !== "how";
+  }));
+
+  // sync
+  $("#sync-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("#sync-out").value); syncMsg("Code copied. Paste it on your other device."); }
+    catch { $("#sync-out").select(); syncMsg("Select all and copy the code above."); }
+  };
+  $("#sync-download").onclick = () => {
+    const blob = new Blob([JSON.stringify(gatherState(), null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "champions-quiz-backup.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    syncMsg("Backup file saved.");
+  };
+  $("#sync-load").onclick = () => {
+    try {
+      const added = applyImported(decodeState($("#sync-in").value));
+      syncMsg(`Loaded. ${added} card${added === 1 ? "" : "s"} updated.`);
+    } catch (err) { syncMsg("That code could not be read. Check you copied all of it.", false); }
+  };
+  $("#sync-file").onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const added = applyImported(JSON.parse(reader.result));
+        syncMsg(`Loaded from file. ${added} card${added === 1 ? "" : "s"} updated.`);
+      } catch { syncMsg("That file could not be read.", false); }
+    };
+    reader.readAsText(file);
+  };
+
+  // keyboard (quiz screen only, no drawer open)
   document.addEventListener("keydown", (e) => {
-    if (!$("#settings").hidden || !$("#stats").hidden) return;
+    if ([...document.querySelectorAll(".drawer")].some((d) => !d.hidden)) return;
+    if ($("#quiz-screen").hidden) return;
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
       if (current && $("#answer").hidden) flip();
     } else if (!$("#answer").hidden && ["1", "2", "3"].includes(e.key)) {
-      const map = { 1: "again", 2: "good", 3: "easy" };
-      grade(current, map[e.key]);
+      grade(current, { 1: "again", 2: "good", 3: "easy" }[e.key]);
       renderQuestion();
     }
   });
@@ -722,18 +858,13 @@ async function boot() {
     ]);
     DATA = await champRes.json();
     CHART = await chartRes.json();
-    // Mechanics are optional enrichment — the quiz still works if they're missing.
-    const ref = async (f) => {
-      try { return await (await fetch(f)).json(); } catch { return {}; }
-    };
+    const ref = async (f) => { try { return await (await fetch(f)).json(); } catch { return {}; } };
     [MOVES, ABILITIES, ITEMS] = await Promise.all([
-      ref("data/moves.json"),
-      ref("data/abilities.json"),
-      ref("data/items.json"),
+      ref("data/moves.json"), ref("data/abilities.json"), ref("data/items.json"),
     ]);
-  } catch (err) {
-    $("#message-text").textContent =
-      "Could not load quiz data. If you just set this up, run the data refresh first.";
+  } catch {
+    $("#message-text").textContent = "Could not load quiz data. If you just set this up, run the data refresh first.";
+    showScreen("quiz");
     return;
   }
 
@@ -741,14 +872,11 @@ async function boot() {
   maxUsage = Math.max(...DATA.pokemon.map((p) => p.usage), 1);
   settings.topN = Math.min(settings.topN, DATA.pokemon.length);
 
-  reconcileContent(); // adjust schedules for any facts that changed since last visit
-
+  reconcileContent();
   wireEvents();
-  renderQuestion();
+  showScreen("home");
 
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
-  }
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
 boot();

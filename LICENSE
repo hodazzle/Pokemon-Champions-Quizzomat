@@ -1,32 +1,24 @@
-MIT License
+Champions Quiz
+Copyright (c) 2026 hodazzle. All rights reserved.
 
-Copyright (c) 2026 Danilo
+This source code is published so that the app can run on GitHub Pages and so that
+others can learn from it. It is provided for personal, non-commercial use only.
+You may not redistribute it, republish it, sell it, or present it as your own
+work without permission from the author.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+DISCLAIMER OF AFFILIATION AND INTELLECTUAL PROPERTY
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This is an unofficial, fan made study tool. It is not affiliated with, endorsed
+by, sponsored by, or associated with Nintendo, Game Freak, The Pokemon Company,
+or Pikalytics in any way.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Pokemon and all related names, characters, sprites and images are trademarks and
+copyright of their respective owners (Nintendo, Game Freak, and The Pokemon
+Company) and are used here only for personal study. Competitive usage statistics
+are courtesy of Pikalytics (https://www.pikalytics.com). Move, ability and item
+mechanics are from PokeAPI (https://pokeapi.co). No copyright or trademark
+infringement is intended. This project earns no money and serves no commercial
+purpose.
 
--------------------------------------------------------------------------------
-NOTE ON BUNDLED CONTENT (not covered by the MIT license above):
-
-- The MIT license applies only to the original source code in this repository.
-- Usage statistics in `data/` are sourced from Pikalytics (https://www.pikalytics.com)
-  and remain the property of Pikalytics.
-- Pokémon names, sprites in `sprites/`, and related assets are trademarks and
-  copyright of Nintendo, Game Freak, and The Pokémon Company. They are included
-  here for personal, non-commercial study only.
--------------------------------------------------------------------------------
+If any rights holder objects to this project, please contact the author and it
+will be addressed promptly.
