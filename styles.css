@@ -149,20 +149,54 @@ body {
 
 /* ---------- Answer list ---------- */
 .answer { text-align: left; margin-top: 6px; }
+.ans-row-wrap { margin: 7px 0; }
 .ans-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 7px 0;
 }
 .ans-label {
   flex: 0 0 auto;
   min-width: 38%;
+  max-width: 50%;
   font-weight: 600;
   font-size: 14px;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+}
+/* When the label carries expandable info it's a button — strip button chrome. */
+.ans-label.has-info {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.info-dot { opacity: 0.45; font-size: 12px; transition: opacity 0.15s; }
+.ans-label.has-info:hover .info-dot,
+.ans-label.open .info-dot { opacity: 1; color: var(--accent-2); }
+
+.ans-detail {
+  margin: 4px 0 2px;
+  padding: 9px 11px;
+  background: var(--bg-soft);
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.ans-detail .meta-line { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.ans-detail .chip {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--fg);
+  padding: 2px 8px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
 }
 .bar {
   flex: 1;

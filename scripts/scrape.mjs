@@ -81,10 +81,11 @@ const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// Keep the top N real entries (drop the "Other" catch-all bucket), sorted by %.
+// Keep the top N real entries (drop "Other"/"Nothing" placeholders), sorted by %.
+const PLACEHOLDERS = new Set(["Other", "Nothing"]);
 function topReal(arr, labelKey, n) {
   return (arr || [])
-    .filter((e) => e && e[labelKey] && e[labelKey] !== "Other")
+    .filter((e) => e && e[labelKey] && !PLACEHOLDERS.has(e[labelKey]))
     .map((e) => ({ name: e[labelKey], percent: num(e.percent), type: e.type }))
     .sort((a, b) => b.percent - a.percent)
     .slice(0, n);
@@ -237,6 +238,118 @@ async function downloadSprites(champions) {
   if (failed.length) console.log("  missing:", failed.join(", "));
 }
 
+// ---------------------------------------------------------------------------
+// Move / ability / item mechanics (from PokeAPI — free, no key, stable data)
+// ---------------------------------------------------------------------------
+
+const POKEAPI = "https://pokeapi.co/api/v2";
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const titleize = (s) =>
+  (s || "").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+function toSlug(name) {
+  return name
+    .toLowerCase()
+    .replace(/[.'’:%]/g, "")
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function enText(entries, key) {
+  if (!Array.isArray(entries)) return "";
+  const en = entries.find((e) => e.language?.name === "en");
+  return (en?.[key] || "").replace(/\s+/g, " ").trim();
+}
+
+// How a move targets in doubles — what VGC players care about (spread vs single).
+const TARGET_LABEL = {
+  "selected-pokemon": "Single target",
+  "all-opponents": "Spread (both foes)",
+  "all-other-pokemon": "Spread (all others)",
+  user: "Self",
+  "users-field": "Team",
+  "user-and-allies": "Team",
+  ally: "Ally",
+  "entire-field": "Field",
+  "all-pokemon": "Field",
+  "random-opponent": "Random foe",
+  "user-or-ally": "Self / Ally",
+};
+
+async function fetchMove(name) {
+  try {
+    const d = await fetchJSON(`${POKEAPI}/move/${toSlug(name)}`);
+    let desc = enText(d.effect_entries, "short_effect");
+    if (d.meta?.effect_chance != null)
+      desc = desc.replace(/\$effect_chance/g, d.meta.effect_chance);
+    return {
+      type: d.type?.name || null,
+      category: d.damage_class?.name ? cap(d.damage_class.name) : null,
+      power: d.power ?? null,
+      accuracy: d.accuracy ?? null,
+      pp: d.pp ?? null,
+      target: TARGET_LABEL[d.target?.name] || titleize(d.target?.name),
+      desc,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchAbility(name) {
+  try {
+    const d = await fetchJSON(`${POKEAPI}/ability/${toSlug(name)}`);
+    return {
+      desc: enText(d.effect_entries, "short_effect") || enText(d.flavor_text_entries, "flavor_text"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchItem(name) {
+  try {
+    const d = await fetchJSON(`${POKEAPI}/item/${toSlug(name)}`);
+    return {
+      desc: enText(d.effect_entries, "short_effect") || enText(d.flavor_text_entries, "text"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function buildDict(names, fetchOne) {
+  const arr = [...names];
+  const dict = {};
+  const miss = [];
+  await mapPool(arr, 8, async (name) => {
+    const rec = await fetchOne(name);
+    if (rec) dict[name] = rec;
+    else miss.push(name);
+  });
+  return { dict, miss };
+}
+
+// Pull mechanics for every move/ability/item that appears in the dataset.
+async function buildReference(champions) {
+  const moves = new Set(), abilities = new Set(), items = new Set();
+  for (const p of champions.pokemon) {
+    p.moves.forEach((m) => moves.add(m.name));
+    p.abilities.forEach((a) => abilities.add(a.name));
+    p.items.forEach((i) => items.add(i.name));
+  }
+  const m = await buildDict(moves, fetchMove);
+  const a = await buildDict(abilities, fetchAbility);
+  const i = await buildDict(items, fetchItem);
+  const report = (label, set, res) =>
+    console.log(`  ${label}: ${set.size - res.miss.length}/${set.size}` + (res.miss.length ? ` (no data: ${res.miss.join(", ")})` : ""));
+  report("moves", moves, m);
+  report("abilities", abilities, a);
+  report("items", items, i);
+  return { moves: m.dict, abilities: a.dict, items: i.dict };
+}
+
 function buildTypeChart(tq) {
   return {
     generatedAt: tq.generatedAt,
@@ -274,6 +387,9 @@ async function main() {
   console.log("Downloading sprites...");
   await downloadSprites(champions);
 
+  console.log("Fetching move/ability/item mechanics from PokeAPI...");
+  const reference = await buildReference(champions);
+
   await writeFile(
     join(DATA_DIR, "champions.json"),
     JSON.stringify(champions, null, 0),
@@ -282,10 +398,13 @@ async function main() {
     join(DATA_DIR, "typechart.json"),
     JSON.stringify(buildTypeChart(typequiz), null, 0),
   );
+  await writeFile(join(DATA_DIR, "moves.json"), JSON.stringify(reference.moves, null, 0));
+  await writeFile(join(DATA_DIR, "abilities.json"), JSON.stringify(reference.abilities, null, 0));
+  await writeFile(join(DATA_DIR, "items.json"), JSON.stringify(reference.items, null, 0));
 
   console.log("Done.");
   console.log(`  data/champions.json  (${champions.pokemon.length} Pokemon)`);
-  console.log(`  data/typechart.json`);
+  console.log(`  data/typechart.json, moves.json, abilities.json, items.json`);
 }
 
 main().catch((err) => {

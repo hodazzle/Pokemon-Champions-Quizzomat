@@ -75,6 +75,9 @@ const defaultSettings = () => ({
 
 let DATA = null; // { meta, pokemon: [...] }
 let CHART = null; // typechart.json (ability maps)
+let MOVES = {}; // name -> { type, category, power, accuracy, pp, target, desc }
+let ABILITIES = {}; // name -> { desc }
+let ITEMS = {}; // name -> { desc }
 let byId = new Map(); // pokemonId -> pokemon
 let maxUsage = 1;
 
@@ -412,7 +415,8 @@ function renderAnswer() {
     if (!a.items.length) {
       ans.append(el("p", "answer-empty", "No data."));
     } else {
-      for (const it of a.items) ans.append(answerRow(it.name, it.percent));
+      for (const it of a.items)
+        ans.append(answerRow(it.name, it.percent, buildDetail(current.cat, it.name)));
     }
   } else {
     if (!a.items.length) {
@@ -430,16 +434,62 @@ function renderAnswer() {
   $("#grade-row").hidden = false;
 }
 
-function answerRow(label, pct) {
+function answerRow(label, pct, detailHtml) {
+  const wrap = el("div", "ans-row-wrap");
   const row = el("div", "ans-row");
-  row.append(el("span", "ans-label", label));
+
+  // Label is a button only when there's info to expand; tapping it reveals detail
+  // in place — it never flips the card or affects grading.
+  const lab = el(detailHtml ? "button" : "span", "ans-label" + (detailHtml ? " has-info" : ""));
+  lab.append(document.createTextNode(label));
+  if (detailHtml) lab.append(el("span", "info-dot", "ⓘ"));
+  row.append(lab);
+
   const bar = el("div", "bar");
   bar.append(Object.assign(document.createElement("span"), {
     style: `width:${Math.min(100, pct)}%`,
   }));
   row.append(bar);
   row.append(el("span", "ans-pct", fmtPct(pct)));
-  return row;
+  wrap.append(row);
+
+  if (detailHtml) {
+    const detail = el("div", "ans-detail", detailHtml);
+    detail.hidden = true;
+    lab.onclick = (e) => {
+      e.stopPropagation();
+      detail.hidden = !detail.hidden;
+      lab.classList.toggle("open", !detail.hidden);
+    };
+    wrap.append(detail);
+  }
+  return wrap;
+}
+
+const esc = (s) =>
+  String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Build the expandable detail HTML for a move/ability/item answer, or null.
+function buildDetail(cat, name) {
+  if (cat === "moves") {
+    const m = MOVES[name];
+    return m ? moveDetailHtml(m) : null;
+  }
+  const rec = (cat === "abilities" ? ABILITIES : cat === "items" ? ITEMS : null)?.[name];
+  return rec && rec.desc ? `<div>${esc(rec.desc)}</div>` : null;
+}
+
+function moveDetailHtml(m) {
+  const chips = [];
+  if (m.type) chips.push(`<span class="chip">${cap(m.type)}</span>`);
+  if (m.category) chips.push(`<span class="chip">${m.category}</span>`);
+  chips.push(`<span class="chip">${m.power ? m.power + " BP" : "— BP"}</span>`);
+  chips.push(`<span class="chip">${m.accuracy == null ? "—" : m.accuracy + "%"} acc</span>`);
+  if (m.target) chips.push(`<span class="chip">${esc(m.target)}</span>`);
+  if (m.pp) chips.push(`<span class="chip">${m.pp} PP</span>`);
+  let html = `<div class="meta-line">${chips.join("")}</div>`;
+  if (m.desc) html += `<div>${esc(m.desc)}</div>`;
+  return html;
 }
 
 function statSpread(stats) {
@@ -666,6 +716,15 @@ async function boot() {
     ]);
     DATA = await champRes.json();
     CHART = await chartRes.json();
+    // Mechanics are optional enrichment — the quiz still works if they're missing.
+    const ref = async (f) => {
+      try { return await (await fetch(f)).json(); } catch { return {}; }
+    };
+    [MOVES, ABILITIES, ITEMS] = await Promise.all([
+      ref("data/moves.json"),
+      ref("data/abilities.json"),
+      ref("data/items.json"),
+    ]);
   } catch (err) {
     $("#message-text").textContent =
       "Could not load quiz data. If you just set this up, run the data refresh first.";

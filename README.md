@@ -35,6 +35,11 @@ You're quizzed **more often on popular Pokémon** (Basculegion shows up far more
 - **Base Speed** — the Pokémon's base Speed stat (with its full stat spread on the back)
 - **Weaknesses / Resistances / Immunities** — its type matchups
 
+**Tap any move, ability, or item** in the revealed answer to expand its details —
+a move's type, category (physical/special/status), power, accuracy, spread vs. single
+target, PP, and effect; or an ability/item's description — right inline, without flipping
+the card or affecting your grade.
+
 Tap **⚙** to turn any of these on/off, choose how many of the top Pokémon to study, and
 set how many new cards to learn per day. Tap **📊** to see your progress.
 
@@ -78,8 +83,9 @@ server and nothing to maintain.
 | `index.html`, `styles.css`, `app.js` | the app and quiz engine |
 | `data/champions.json` | per-Pokémon usage, top moves/abilities/items, types, stats |
 | `data/typechart.json` | ability-based immunity maps (the type chart is built into `app.js`) |
+| `data/moves.json`, `abilities.json`, `items.json` | mechanics/effects from [PokéAPI](https://pokeapi.co) |
 | `sprites/*.png` | cached Pokémon sprites |
-| `scripts/scrape.mjs` | the scraper (runs in CI; uses Pikalytics' documented data endpoints) |
+| `scripts/scrape.mjs` | the scraper (runs in CI; uses Pikalytics' data endpoints + PokéAPI) |
 | `.github/workflows/refresh.yml` | weekly refresh + deploy to GitHub Pages |
 | `manifest.webmanifest`, `sw.js`, `icons/` | makes it installable + offline (PWA) |
 
