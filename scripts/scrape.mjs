@@ -172,7 +172,57 @@ async function buildChampions(list, typequiz, meta, date, formatKey) {
     seen.add(m.id);
     unique.push(m);
   }
+
+  mergeMegaStones(unique);
   return { meta, pokemon: unique };
+}
+
+const isMegaName = (n) => /-Mega(-[XY])?$/i.test(n);
+const baseSpeciesName = (n) => n.replace(/-Mega(-[XY])?$/i, "");
+
+// A Mega always holds its stone, so its Items card is trivial — instead we fold the
+// stone into the BASE form's item list at its real share of the species' usage:
+//   stoneShare = megaUsage / (baseUsage + sum(megaUsage))
+// and rescale the base items so the distribution stays coherent (~100%).
+function mergeMegaStones(list) {
+  const byName = new Map(list.map((p) => [p.name, p]));
+  const megasByBase = new Map();
+  for (const p of list) {
+    if (!isMegaName(p.name)) continue;
+    p.isMega = true; // app drops the Items card for these
+    const base = baseSpeciesName(p.name);
+    (megasByBase.get(base) || megasByBase.set(base, []).get(base)).push(p);
+  }
+
+  for (const [base, megas] of megasByBase) {
+    const baseMon = byName.get(base);
+    if (!baseMon) continue; // base form not tracked -> nothing to merge into
+    const total = baseMon.usage + megas.reduce((s, m) => s + m.usage, 0);
+    if (total <= 0) continue;
+
+    const stones = megas.map((m) => ({
+      name: m.items[0]?.name || `${base} Stone`,
+      percent: (m.usage / total) * 100,
+      mega: true,
+    }));
+    const scaledBase = baseMon.items.map((i) => ({
+      name: i.name,
+      percent: i.percent * (baseMon.usage / total),
+    }));
+
+    let merged = [...scaledBase, ...stones].sort((a, b) => b.percent - a.percent);
+    let result = merged.slice(0, KEEP.items);
+    // Guarantee the stone(s) appear even if they'd rank below the top items.
+    if (stones.some((s) => !result.includes(s))) {
+      result = [...scaledBase]
+        .sort((a, b) => b.percent - a.percent)
+        .slice(0, Math.max(0, KEEP.items - stones.length))
+        .concat(stones)
+        .sort((a, b) => b.percent - a.percent);
+    }
+    baseMon.items = result;
+    baseMon.canMega = true;
+  }
 }
 
 /** Candidate sprite filenames, tried in order until one returns 200. */

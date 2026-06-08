@@ -151,7 +151,7 @@ function eligiblePokemon() {
 function hasCategory(p, cat) {
   if (cat === "moves") return p.moves.length > 0;
   if (cat === "abilities") return p.abilities.length > 0;
-  if (cat === "items") return p.items.length > 0;
+  if (cat === "items") return !p.isMega && p.items.length > 0; // Mega item is always its stone
   if (cat === "speed") return !!(p.stats && Number.isFinite(p.stats.spe));
   if (cat === "weak") return true;
   if (cat === "resist") return true;
@@ -416,7 +416,7 @@ function renderAnswer() {
       ans.append(el("p", "answer-empty", "No data."));
     } else {
       for (const it of a.items)
-        ans.append(answerRow(it.name, it.percent, buildDetail(current.cat, it.name)));
+        ans.append(answerRow(it.name, it.percent, buildDetail(current.cat, it), it.mega ? "Mega" : null));
     }
   } else {
     if (!a.items.length) {
@@ -434,7 +434,7 @@ function renderAnswer() {
   $("#grade-row").hidden = false;
 }
 
-function answerRow(label, pct, detailHtml) {
+function answerRow(label, pct, detailHtml, badge) {
   const wrap = el("div", "ans-row-wrap");
   const row = el("div", "ans-row");
 
@@ -442,6 +442,7 @@ function answerRow(label, pct, detailHtml) {
   // in place — it never flips the card or affects grading.
   const lab = el(detailHtml ? "button" : "span", "ans-label" + (detailHtml ? " has-info" : ""));
   lab.append(document.createTextNode(label));
+  if (badge) lab.append(el("span", "mega-badge", badge));
   if (detailHtml) lab.append(el("span", "info-dot", "ⓘ"));
   row.append(lab);
 
@@ -470,10 +471,15 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // Build the expandable detail HTML for a move/ability/item answer, or null.
-function buildDetail(cat, name) {
+function buildDetail(cat, it) {
+  const name = it.name;
   if (cat === "moves") {
     const m = MOVES[name];
     return m ? moveDetailHtml(m) : null;
+  }
+  if (cat === "items" && it.mega) {
+    const known = ITEMS[name]?.desc;
+    return `<div>${known ? esc(known) + " " : ""}Mega Evolution stone — the holder Mega Evolves in battle. Shown as its share of this Pokémon's total usage.</div>`;
   }
   const rec = (cat === "abilities" ? ABILITIES : cat === "items" ? ITEMS : null)?.[name];
   return rec && rec.desc ? `<div>${esc(rec.desc)}</div>` : null;
